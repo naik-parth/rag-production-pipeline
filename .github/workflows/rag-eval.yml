@@ -30,5 +30,8 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         RAGAS_DO_NOT_TRACK: "true"
       run: |
+        # Force bash to strip out leading/trailing spaces, newlines, and any literal quotes
+        export OPENAI_API_KEY=$(echo "$OPENAI_API_KEY" | tr -d '\r\n"' | xor spaces | xargs)
+        
         export PYTHONPATH=$PYTHONPATH:$(pwd)
         python src/evaluation.py
