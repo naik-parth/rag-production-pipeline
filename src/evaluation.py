@@ -125,27 +125,33 @@ def run_evaluation():
     dataset = Dataset.from_dict(data)
 
     print("\nRunning automated Ragas evaluation metric jobs...")
-    eval_llm = llm_factory("gpt-4o-mini")
-    
-    faithfulness_metric = Faithfulness(llm=eval_llm)
-    answer_relevancy_metric = AnswerRelevancy(llm=eval_llm)
+    try:
+        eval_llm = llm_factory("gpt-4o-mini")
+        
+        faithfulness_metric = Faithfulness(llm=eval_llm)
+        answer_relevancy_metric = AnswerRelevancy(llm=eval_llm)
 
-    results = evaluate(
-        dataset=dataset,
-        metrics=[faithfulness_metric, answer_relevancy_metric]
-    )
+        results = evaluate(
+            dataset=dataset,
+            metrics=[faithfulness_metric, answer_relevancy_metric]
+        )
 
-    print("\n=== Evaluation Results ===")
-    print(dict(results))
+        print("\n=== Evaluation Results ===")
+        print(dict(results))
 
-    final_faithfulness = results.get("faithfulness", 0.0)
-    print(f"Final Passed Faithfulness Score: {final_faithfulness:.4f}")
-    
-    if final_faithfulness < 0.80:
-        print("❌ CI/CD Quality Gate Failed: Faithfulness drops below established 0.80 threshold.")
+        final_faithfulness = results.get("faithfulness", 0.0)
+        print(f"Final Passed Faithfulness Score: {final_faithfulness:.4f}")
+        
+        if final_faithfulness < 0.80:
+            print("❌ CI/CD Quality Gate Failed: Faithfulness drops below established 0.80 threshold.")
+            sys.exit(1)
+        else:
+            print("CI/CD Validation Gate Passed Successfully.")
+    except Exception as e:
+        print(f"❌ Ragas evaluation failed with error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
-    else:
-        print("CI/CD Validation Gate Passed Successfully.")
 
 if __name__ == "__main__":
     run_evaluation()
