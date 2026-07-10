@@ -1,103 +1,147 @@
 import os
 from typing import Dict, Any, List
+from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
-from sentence_transformers import CrossEncoder
 
-# Define state structure for LangGraph
+# State schema tracks the execution loop details
 class PipelineState(Dict):
     question: str
     context: List[Any]
     generation: str
+    retry_count: int  # Prevent infinite routing loops
+
+# Pydantic structured output model for the hallucination checker
+class HallucinationGrade(BaseModel):
+    binary_score: str = Field(
+        description="Answer is grounded in the facts. 'yes' if it has no hallucinations, 'no' if it contains hallucinated or ungrounded claims."
+    )
 
 class RAGGraphEngine:
     def __init__(self, retriever: Any, config: Dict[str, Any] = None):
         self.retriever = retriever
-        self.config = config or {"llm_model": "gpt-4o-mini"}
+        self.config = config or {"llm_model": "gpt-4o-mini", "max_retries": 2}
         
-        # Sanitize the API key string to strip out hidden quotes, newlines, or whitespace
+        # Sanitize API key
         if "OPENAI_API_KEY" in os.environ:
             raw_key = os.environ["OPENAI_API_KEY"]
             clean_key = raw_key.strip().replace("'", "").replace('"', "").replace("\n", "").replace("\r", "")
             os.environ["OPENAI_API_KEY"] = clean_key
 
-        # Initialize the localized LLM instance
         self.llm = ChatOpenAI(model=self.config["llm_model"], temperature=0.0)
         
-        # Load the lightweight, powerful Cross-Encoder model
-        self.reranker = CrossEncoder("BAAI/bge-reranker-base")
-        
+        # Bind Pydantic parser to force structured grading decisions
+        self.structured_grader = self.llm.with_structured_output(HallucinationGrade)
         self.app = self._build_graph()
 
     def retrieve_node(self, state: PipelineState) -> PipelineState:
-        """Extracts candidate document context using the hybrid sparse/dense engine."""
+        """Fetch matching candidate documentation."""
         question = state["question"]
-        # Fetch a wider pool of candidates (e.g., top 10) to give the re-ranker options
-        docs = self.retriever.retrieve(question)
-        return {"question": question, "context": docs, "generation": state.get("generation", "")}
-
-    def rerank_node(self, state: PipelineState) -> PipelineState:
-        """Scores candidate documents against the query and sorts by absolute relevance."""
-        question = state["question"]
-        docs = state["context"]
-        
-        if not docs:
-            return state
-
-        # Prepare pairs: [[query, doc_1], [query, doc_2], ...]
-        pairs = [[question, doc.page_content] for doc in docs]
-        
-        # Calculate cross-attention relevance scores
-        scores = self.reranker.predict(pairs)
-        
-        # Pair documents with their calculated scores
-        scored_docs = list(zip(docs, scores))
-        
-        # Sort documents descending based on score and select top 3
-        sorted_docs = sorted(scored_docs, key=lambda x: x[1], reverse=True)
-        top_docs = [doc for doc, score in sorted_docs[:3]]
-        
-        print(f"--- Re-ranked {len(docs)} docs down to {len(top_docs)} ---")
-        for i, (doc, score) in enumerate(sorted_docs[:3]):
-            print(f"Top {i+1} Doc Score: {score:.4f} | Preview: {doc.page_content[:60]}...")
-            
-        return {"question": question, "context": top_docs, "generation": state.get("generation", "")}
+        docs = self.retriever.get_relevant_documents(question)
+        # Initialize retry count if empty
+        retry_count = state.get("retry_count", 0)
+        return {"question": question, "context": docs, "generation": "", "retry_count": retry_count}
 
     def generate_node(self, state: PipelineState) -> PipelineState:
-        """Constructs prompt topology and calls the sanitized LLM engine."""
+        """Synthesizes the answer based strictly on available context."""
         question = state["question"]
         context = state["context"]
         
-        # Format highly-relevant document contexts into an evaluation payload
         context_str = "\n\n".join([doc.page_content for doc in context])
         formatted_prompt = (
-            f"You are a production assistant answering queries based strictly on context.\n"
+            f"You are a strict production assistant. Answer the question using ONLY the provided facts.\n"
+            f"If the context does not contain the answer, say exactly: 'I cannot answer this based on the provided documents.'\n\n"
             f"Context:\n{context_str}\n\n"
             f"Question: {question}\n"
             f"Answer:"
         )
         
         response = self.llm.invoke([HumanMessage(content=formatted_prompt)])
-        return {"question": question, "context": context, "generation": str(response.content)}
+        return {"question": question, "context": context, "generation": str(response.content), "retry_count": state["retry_count"]}
+
+    def rewrite_node(self, state: PipelineState) -> PipelineState:
+        """Rewrites the user query to yield better contextual matches on retry."""
+        question = state["question"]
+        retry_count = state["retry_count"] + 1
+        
+        prompt = (
+            f"The previous retrieval failed to answer this query: '{question}'.\n"
+            f"Analyze the query and rewrite it to be highly optimized for a semantic vector search.\n"
+            f"Return ONLY the raw rewritten search string with no explanation or wrappers."
+        )
+        
+        rewritten_response = self.llm.invoke([HumanMessage(content=prompt)])
+        rewritten_query = str(rewritten_response.content).strip()
+        
+        print(f"\n🔄 [Self-Correction: Loop {retry_count}] Rewriting query to: '{rewritten_query}'")
+        return {"question": rewritten_query, "context": [], "generation": "", "retry_count": retry_count}
+
+    def evaluate_hallucination_route(self, state: PipelineState) -> str:
+        """Conditional routing node that grades the response for factual alignment."""
+        generation = state["generation"]
+        context = state["context"]
+        retry_count = state["retry_count"]
+        
+        # If the model correctly admitted it doesn't know, don't flag as hallucination
+        if "cannot answer" in generation.lower() or not context:
+            if retry_count < self.config["max_retries"]:
+                return "rewrite"
+            return "end"
+
+        context_str = "\n\n".join([doc.page_content for doc in context])
+        grader_prompt = (
+            f"Fact-Checker: You must evaluate if the generated answer is completely grounded in the context facts.\n\n"
+            f"Context:\n{context_str}\n\n"
+            f"Generated Answer:\n{generation}\n\n"
+            f"Is the generated answer 100% grounded in and supported by the context? Yes or No?"
+        )
+        
+        try:
+            grade: HallucinationGrade = self.structured_grader.invoke([HumanMessage(content=grader_prompt)])
+            score = grade.binary_score.strip().lower()
+        except Exception:
+            score = "yes"  # Fallback gracefully to prevent hard block on parse failures
+
+        if score == "yes":
+            print("✅ [Guardrail Passed] Generation is verified against context documents.")
+            return "end"
+        else:
+            print("🚨 [Guardrail Failed] Hallucination detected!")
+            if retry_count < self.config["max_retries"]:
+                return "rewrite"
+            else:
+                print("⚠️ [Max Retries Hit] Returning best-effort grounded response.")
+                return "end"
 
     def _build_graph(self):
-        """Compiles the operational nodes into a unified StateGraph orchestration."""
+        """Compiles self-correcting routing edges into a loop workflow."""
         workflow = StateGraph(PipelineState)
         
-        # Register functional steps (including the new re-rank step)
+        # Register nodes
         workflow.add_node("retrieve", self.retrieve_node)
-        workflow.add_node("rerank", self.rerank_node)
         workflow.add_node("generate", self.generate_node)
+        workflow.add_node("rewrite", self.rewrite_node)
         
-        # Configure linear execution sequence: retrieve -> rerank -> generate
+        # Configure linear flow
         workflow.set_entry_point("retrieve")
-        workflow.add_edge("retrieve", "rerank")
-        workflow.add_edge("rerank", "generate")
-        workflow.add_edge("generate", END)
+        workflow.add_edge("retrieve", "generate")
+        
+        # Add the self-corrective conditional routing edge from generate
+        workflow.add_conditional_edges(
+            "generate",
+            self.evaluate_hallucination_route,
+            {
+                "rewrite": "rewrite",
+                "end": END
+            }
+        )
+        
+        # Route rewritten questions back to retrieval
+        workflow.add_edge("rewrite", "retrieve")
         
         return workflow.compile()
 
     def run(self, question: str) -> Dict[str, Any]:
-        """Invokes the execution tree against a targeted evaluation question string."""
-        return self.app.invoke({"question": question, "context": [], "generation": ""})
+        """Runs the loop state tree starting retry count at 0."""
+        return self.app.invoke({"question": question, "context": [], "generation": "", "retry_count": 0})
