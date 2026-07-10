@@ -1,45 +1,54 @@
+import os
+from typing import List
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import PyPDFLoader
 
-def get_mock_technical_corpus() -> list[Document]:
-    """Generates a mock technical document corpus matching the golden dataset."""
-    doc_content = """
-    # Technical Specification: Production RAG Pipeline Engine
+class DocumentIngestionEngine:
+    """Handles directory scanning, document loading, and semantic text chunking."""
     
-    ## Core Architecture Configuration
-    The ingestion engine is meticulously optimized for dense and sparse information extraction. 
-    To preserve local semantic context across document boundaries, the chunking topology is explicitly 
-    configured with a chunk size of 600 tokens and a token overlap of 100 tokens. Documents are parsed 
-    and embedded into a high-performance vector database using dense embeddings.
-    
-    ## Advanced Hybrid Retrieval Mechanics
-    To mitigate the limitations of purely semantic embedding drift, this system leverages a hybrid search 
-    architecture. The hybrid search combines results from vector semantic search and traditional BM25 
-    keyword search. Once candidates are gathered from both components, they are integrated using Reciprocal 
-    Rank Fusion (RRF), which blends and reranks the candidate pools to bubble up the most contextually relevant documents.
-    Following RRF, a secondary Cross-Encoder re-ranker rescores the hybrid outputs.
-    
-    ## Strict Anti-Hallucination Guardrails
-    Engineering maturity demands highly deterministic behavior from LLM generators. If the retrieved document 
-    chunks do not contain enough supporting evidence to answer the user's question, the generation layer 
-    triggers a strict guardrail condition. Rather than guessing, the pipeline short-circuits execution and 
-    returns exactly: "INSUFFICIENT_EVIDENCE: I am unable to answer based on the provided technical documentation."
-    """
-    
-    # We use a character splitter as a proxy for tokens here for simplicity
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1500, 
-        chunk_overlap=300
-    )
-    
-    texts = splitter.split_text(doc_content)
-    
-    documents = []
-    for i, text in enumerate(texts):
-        documents.append(
-            Document(
-                page_content=text,
-                metadata={"source": "rag_architecture_spec.md", "paragraph": i + 1}
-            )
+    def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200):
+        # The Recursive text splitter keeps paragraphs and sentences together by default
+        self.text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            length_function=len,
+            separators=["\n\n", "\n", " ", ""]
         )
-    return documents
+
+    def load_pdf(self, file_path: str) -> List[Document]:
+        """Loads and parses a PDF file page-by-page using PyPDFLoader."""
+        print(f"📄 Loading PDF: {file_path}")
+        try:
+            # PyPDFLoader extracts text and automatically appends page numbers to metadata
+            loader = PyPDFLoader(file_path)
+            return loader.load()
+        except Exception as e:
+            print(f"❌ Error parsing PDF {file_path}: {str(e)}")
+            return []
+
+    def ingest_directory(self, directory_path: str) -> List[Document]:
+        """Scans a local directory for PDFs, parses them, and returns semantic chunks."""
+        raw_documents = []
+        
+        if not os.path.exists(directory_path):
+            print(f"📁 Directory '{directory_path}' not found. Creating it now...")
+            os.makedirs(directory_path)
+            return []
+
+        # Recursively scan the folder for any PDF files
+        for root, _, files in os.walk(directory_path):
+            for file in files:
+                if file.lower().endswith('.pdf'):
+                    file_path = os.path.join(root, file)
+                    loaded_pages = self.load_pdf(file_path)
+                    raw_documents.extend(loaded_pages)
+
+        if not raw_documents:
+            print(f"⚠️ No PDF documents found in '{directory_path}/'.")
+            return []
+
+        # Break down the large raw pages into overlapping contextual chunks
+        chunks = self.text_splitter.split_documents(raw_documents)
+        print(f"✅ Success: Processed {len(raw_documents)} raw pages into {len(chunks)} split chunks.")
+        return chunks
