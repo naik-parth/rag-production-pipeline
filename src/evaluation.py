@@ -59,8 +59,7 @@ class ProductionHybridRetriever:
         # Gather overlapping dense candidate pools
         dense_results = self.vector_store.similarity_search(query, k=4)
         # Gather overlapping sparse candidate pools
-        sparse_results = self.bm25_retriever.get_relevant_documents(query) if self.bm25_retriever else []
-        
+        sparse_results = self.bm25_retriever.invoke(query) if self.bm25_retriever else []        
         # Deduplicate candidates matching on clean content layouts
         seen = set()
         combined = []
