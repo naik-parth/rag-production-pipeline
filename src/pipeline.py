@@ -28,7 +28,7 @@ class RAGGraphEngine:
     def retrieve_node(self, state: PipelineState) -> PipelineState:
         """Extracts relevant document context using the hybrid sparse/dense engine."""
         question = state["question"]
-        docs = self.retriever.get_relevant_documents(question)
+        docs = self.retriever.retrieve(question)
         return {"question": question, "context": docs, "generation": state.get("generation", "")}
 
     def generate_node(self, state: PipelineState) -> PipelineState:
