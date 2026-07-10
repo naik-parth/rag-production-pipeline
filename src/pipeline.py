@@ -1,68 +1,68 @@
-import yaml
-from typing import Dict, Any, TypedDict, List
+import os
+from typing import Dict, Any, List
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
-from src.retrieval import AdvancedRetriever
 
-class GraphState(TypedDict):
+# Define state structure for LangGraph
+class PipelineState(Dict):
     question: str
     context: List[Any]
     generation: str
 
 class RAGGraphEngine:
-    def __init__(self, retriever: AdvancedRetriever, config_dir: str = "config"):
+    def __init__(self, retriever: Any, config: Dict[str, Any] = None):
         self.retriever = retriever
+        self.config = config or {"llm_model": "gpt-4o-mini"}
         
-        with open(f"{config_dir}/config.yaml", "r") as f:
-            self.config = yaml.safe_load(f)
-        with open(f"{config_dir}/prompts.yaml", "r") as f:
-            self.prompts = yaml.safe_load(f)
-            
+        # Sanitize the API key string to strip out hidden quotes, newlines, or whitespace
+        if "OPENAI_API_KEY" in os.environ:
+            raw_key = os.environ["OPENAI_API_KEY"]
+            clean_key = raw_key.strip().replace("'", "").replace('"', "").replace("\n", "").replace("\r", "")
+            os.environ["OPENAI_API_KEY"] = clean_key
+
+        # Initialize the localized LLM instance
         self.llm = ChatOpenAI(model=self.config["llm_model"], temperature=0.0)
-        self.workflow = StateGraph(GraphState)
-        self._build_graph()
+        self.app = self._build_graph()
 
-    def retrieve_node(self, state: GraphState) -> Dict[str, Any]:
-        docs = self.retriever.retrieve(state["question"])
-        return {"context": docs}
+    def retrieve_node(self, state: PipelineState) -> PipelineState:
+        """Extracts relevant document context using the hybrid sparse/dense engine."""
+        question = state["question"]
+        docs = self.retriever.get_relevant_documents(question)
+        return {"question": question, "context": docs, "generation": state.get("generation", "")}
 
-    def generate_node(self, state: GraphState) -> Dict[str, Any]:
-        context_str = "\n\n".join([
-            f"[Source: {doc.metadata.get('source', 'Unknown')}, Paragraph: {doc.metadata.get('paragraph', 'N/A')}]\n{doc.page_content}"
-            for doc in state["context"]
-        ])
+    def generate_node(self, state: PipelineState) -> PipelineState:
+        """Constructs prompt topology and calls the sanitized LLM engine."""
+        question = state["question"]
+        context = state["context"]
         
-        formatted_prompt = self.prompts["rag_generation_prompt"].format(
-            context=context_str, 
-            question=state["question"]
+        # Format document contexts into an evaluation payload
+        context_str = "\n\n".join([doc.page_content for doc in context])
+        formatted_prompt = (
+            f"You are a production assistant answering queries based strictly on context.\n"
+            f"Context:\n{context_str}\n\n"
+            f"Question: {question}\n"
+            f"Answer:"
         )
         
         response = self.llm.invoke([HumanMessage(content=formatted_prompt)])
-        return {"generation": response.content}
-
-    def decide_to_end(self, state: GraphState) -> str:
-        """Guardrail check: Did the LLM trigger the safety fallback due to insufficient context?"""
-        if "INSUFFICIENT_EVIDENCE" in state["generation"]:
-            return "insufficient_evidence_fallback"
-        return "complete"
+        return {"question": question, "context": context, "generation": str(response.content)}
 
     def _build_graph(self):
-        self.workflow.add_node("retrieve", self.retrieve_node)
-        self.workflow.add_node("generate", self.generate_node)
+        """Compiles the operational nodes into a unified StateGraph orchestration."""
+        workflow = StateGraph(PipelineState)
         
-        self.workflow.set_entry_point("retrieve")
-        self.workflow.add_edge("retrieve", "generate")
+        # Register functional steps
+        workflow.add_node("retrieve", self.retrieve_node)
+        workflow.add_node("generate", self.generate_node)
         
-        self.workflow.add_conditional_edges(
-            "generate",
-            self.decide_to_end,
-            {
-                "insufficient_evidence_fallback": END,
-                "complete": END
-            }
-        )
-        self.app = self.workflow.compile()
+        # Configure linear execution sequence
+        workflow.set_entry_point("retrieve")
+        workflow.add_edge("retrieve", "generate")
+        workflow.add_edge("generate", END)
+        
+        return workflow.compile()
 
     def run(self, question: str) -> Dict[str, Any]:
+        """Invokes the execution tree against a targeted evaluation question string."""
         return self.app.invoke({"question": question, "context": [], "generation": ""})
