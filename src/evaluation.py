@@ -125,12 +125,21 @@ def run_evaluation():
     dataset = Dataset.from_dict(data)
 
     print("\nRunning automated Ragas evaluation metric jobs...")
+    
+    # Import the asynchronous OpenAI client wrapper
+    from openai import AsyncOpenAI
+    
+    # Instantiate the client using your pre-sanitized environment variable
+    openai_client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    
+    # Modern Ragas: Pass the async client instance directly into the factory wrapper
     try:
-        eval_llm = llm_factory("gpt-4o-mini")
+        eval_llm = llm_factory("gpt-4o-mini", client=openai_client)
         
         faithfulness_metric = Faithfulness(llm=eval_llm)
         answer_relevancy_metric = AnswerRelevancy(llm=eval_llm)
 
+        # Invoke scoring calculations against the dataset matrix
         results = evaluate(
             dataset=dataset,
             metrics=[faithfulness_metric, answer_relevancy_metric]
@@ -139,6 +148,7 @@ def run_evaluation():
         print("\n=== Evaluation Results ===")
         print(dict(results))
 
+        # Enforce strict quality engineering pass gate thresholds
         final_faithfulness = results.get("faithfulness", 0.0)
         print(f"Final Passed Faithfulness Score: {final_faithfulness:.4f}")
         
@@ -147,6 +157,7 @@ def run_evaluation():
             sys.exit(1)
         else:
             print("CI/CD Validation Gate Passed Successfully.")
+            
     except Exception as e:
         print(f"❌ Ragas evaluation failed with error: {str(e)}")
         import traceback
