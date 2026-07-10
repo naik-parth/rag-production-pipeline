@@ -27,10 +27,6 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from src.retrieval import AdvancedRetriever
 from src.pipeline import RAGGraphEngine
 
-# Initialize metric instances
-faithfulness = Faithfulness()
-answer_relevancy = AnswerRelevancy()
-
 def run_evaluation():
     with open("config/config.yaml", "r") as f:
         config = yaml.safe_load(f)
@@ -77,6 +73,10 @@ def run_evaluation():
     # Initialize LLMs for Judge Metrics
     eval_llm = ChatOpenAI(model="gpt-4o")
     eval_embeddings = OpenAIEmbeddings()
+    
+    # Initialize metric instances with LLM
+    faithfulness = Faithfulness(llm=eval_llm)
+    answer_relevancy = AnswerRelevancy(llm=eval_llm)
     
     # Configure the runtime settings explicitly using the proper schema object
     print("Running automated Ragas evaluation metric jobs...")
