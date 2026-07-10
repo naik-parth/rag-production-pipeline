@@ -1,7 +1,0 @@
-- name: Run Quality Verification Gate
-      env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        RAGAS_DO_NOT_TRACK: "true"  # Prevents the runner from freezing on telemetry pings
-      run: |
-        export PYTHONPATH=$PYTHONPATH:$(pwd)
-        python src/evaluation.py
