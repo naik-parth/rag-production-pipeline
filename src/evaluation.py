@@ -1,3 +1,14 @@
+import sys
+import types
+
+# Hack to bypass an upstream bug in Ragas v0.4.x initializing legacy VertexAI paths
+_vx = types.ModuleType("langchain_community.chat_models.vertexai")
+class ChatVertexAI: pass
+_vx.ChatVertexAI = ChatVertexAI
+sys.modules["langchain_community.chat_models.vertexai"] = _vx
+
+# Your existing imports continue down here...
+from ragas.evaluation import evaluate
 import os
 import json
 import yaml
