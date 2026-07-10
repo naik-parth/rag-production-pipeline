@@ -69,3 +69,7 @@ class AdvancedRetriever:
             
         hybrid_candidates.sort(key=lambda x: x.metadata["rerank_score"], reverse=True)
         return hybrid_candidates[:self.config["final_top_n"]]
+
+    def get_relevant_documents(self, query: str) -> List[Document]:
+        """Alias method for retrieve() to maintain compatibility with LangChain retriever interface."""
+        return self.retrieve(query)
