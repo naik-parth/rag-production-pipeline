@@ -1,3 +1,23 @@
+import os
+import re
+
+# 1. ABSOLUTE GLOBAL INTERCEPT: Strip everything except valid API key characters
+if "OPENAI_API_KEY" in os.environ:
+    raw_key = os.environ["OPENAI_API_KEY"]
+    # Keep ONLY letters, numbers, hyphens, and underscores (sk-...)
+    clean_key = re.sub(r'[^a-zA-Z0-9\-_]', '', raw_key)
+    os.environ["OPENAI_API_KEY"] = clean_key
+
+# 2. Keep your existing VertexAI mock layer right below it
+import sys
+import types
+_vx = types.ModuleType("langchain_community.chat_models.vertexai")
+class ChatVertexAI: pass
+_vx.ChatVertexAI = ChatVertexAI
+sys.modules["langchain_community.chat_models.vertexai"] = _vx
+
+# 3. Your existing package imports continue here...
+from ragas.evaluation import evaluate
 import sys
 import types
 
