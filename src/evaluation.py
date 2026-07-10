@@ -33,8 +33,12 @@ from ragas.metrics.collections import Faithfulness, AnswerRelevancy
 from src.ingestion import DocumentIngestionEngine
 
 # Enable nested event loops for notebook/runner context architectures
-nest_asyncio.apply()
-
+# Enable nested event loops for notebook/runner architectures (skip if uvloop is active)
+try:
+    nest_asyncio.apply()
+except ValueError:
+    # Safely bypass if running under high-performance production uvloop managers
+    pass
 class ProductionHybridRetriever:
     """Production hybrid search orchestration pairing sparse BM25 with dense vectors."""
     def __init__(self):
