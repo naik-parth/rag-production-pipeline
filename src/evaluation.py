@@ -16,31 +16,20 @@ class ChatVertexAI: pass
 _vx.ChatVertexAI = ChatVertexAI
 sys.modules["langchain_community.chat_models.vertexai"] = _vx
 
-# 3. Your existing package imports continue here...
-from ragas.evaluation import evaluate
-import sys
-import types
-
-# Hack to bypass an upstream bug in Ragas v0.4.x initializing legacy VertexAI paths
-_vx = types.ModuleType("langchain_community.chat_models.vertexai")
-class ChatVertexAI: pass
-_vx.ChatVertexAI = ChatVertexAI
-sys.modules["langchain_community.chat_models.vertexai"] = _vx
-
-# Your existing imports continue down here...
-from ragas.evaluation import evaluate
-import os
 import json
 import yaml
-import sys
 import asyncio
 from datasets import Dataset
-from ragas import evaluate
-from ragas.metrics import faithfulness, answer_relevancy
-from ragas.run_config import RunConfig  # Add this import
+from ragas.evaluation import evaluate
+from ragas.metrics.collections import Faithfulness, AnswerRelevancy
+from ragas.run_config import RunConfig
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from src.retrieval import AdvancedRetriever
 from src.pipeline import RAGGraphEngine
+
+# Initialize metric instances
+faithfulness = Faithfulness()
+answer_relevancy = AnswerRelevancy()
 
 def run_evaluation():
     with open("config/config.yaml", "r") as f:
@@ -89,10 +78,8 @@ def run_evaluation():
     eval_llm = ChatOpenAI(model="gpt-4o")
     eval_embeddings = OpenAIEmbeddings()
     
-    # 2. Update the evaluate block around line 61:
-    print("Running automated Ragas evaluation metric jobs...")
-    
     # Configure the runtime settings explicitly using the proper schema object
+    print("Running automated Ragas evaluation metric jobs...")
     ragas_config = RunConfig(
         max_workers=1,  # Forces sequential evaluation to prevent Python 3.14 async deadlocks
         timeout=60
