@@ -56,13 +56,17 @@ def run_evaluation():
     contexts = []
     
     print(f"Executing RAG pipeline against {len(questions)} evaluation samples...")
-    for q in questions:
+    for i, q in enumerate(questions):
         output = engine.run(q)
         generation = output["generation"]
         
         # Normalize insufficient evidence responses to match golden dataset format
         if "cannot answer" in generation.lower():
             generation = "INSUFFICIENT_EVIDENCE: I am unable to answer based on the provided technical documentation."
+        
+        print(f"\n[Sample {i+1}] Question: {q}")
+        print(f"[Sample {i+1}] Generated: {generation}")
+        print(f"[Sample {i+1}] Expected: {ground_truths[i]}")
         
         answers.append(generation)
         contexts.append([doc.page_content for doc in output["context"]])
@@ -91,29 +95,35 @@ def run_evaluation():
         timeout=60
     )
     
-    result = evaluate(
-        dataset=dataset,
-        metrics=[faithfulness, answer_relevancy],
-        llm=eval_llm,
-        embeddings=eval_embeddings,
-        run_config=ragas_config  # Pass the config object here safely
-    )
-    print("\n=== Evaluation Results ===")
-    print(result)
-    
-    target_threshold = config["eval_threshold"]
-    raw_faithfulness = result["faithfulness"]
-    
-    # Safely extract the float if Ragas returns it inside a list wrapper
-    faithfulness_score = raw_faithfulness[0] if isinstance(raw_faithfulness, list) else raw_faithfulness
-    
-    if faithfulness_score < target_threshold:
-        print(f"CRITICAL: Faithfulness score {faithfulness_score:.4f} dropped below safety limit: {target_threshold}")
-        sys.exit(1)
+    try:
+        result = evaluate(
+            dataset=dataset,
+            metrics=[faithfulness, answer_relevancy],
+            llm=eval_llm,
+            embeddings=eval_embeddings,
+            run_config=ragas_config  # Pass the config object here safely
+        )
+        print("\n=== Evaluation Results ===")
+        print(result)
         
-    print(f"Final Passed Faithfulness Score: {faithfulness_score:.4f}")
-    print("CI/CD Validation Gate Passed Successfully.")
-    sys.exit(0)
+        target_threshold = config["eval_threshold"]
+        raw_faithfulness = result["faithfulness"]
+        
+        # Safely extract the float if Ragas returns it inside a list wrapper
+        faithfulness_score = raw_faithfulness[0] if isinstance(raw_faithfulness, list) else raw_faithfulness
+        
+        if faithfulness_score < target_threshold:
+            print(f"CRITICAL: Faithfulness score {faithfulness_score:.4f} dropped below safety limit: {target_threshold}")
+            sys.exit(1)
+            
+        print(f"Final Passed Faithfulness Score: {faithfulness_score:.4f}")
+        print("CI/CD Validation Gate Passed Successfully.")
+        sys.exit(0)
+    except Exception as e:
+        print(f"ERROR during evaluation: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     run_evaluation()
