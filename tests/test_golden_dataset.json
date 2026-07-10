@@ -1,0 +1,18 @@
+[
+  {
+    "question": "What is the specific chunk size and token overlap configured for the ingestion engine?",
+    "ground_truth": "The ingestion engine is configured with a chunk size of 600 tokens and a token overlap of 100 tokens."
+  },
+  {
+    "question": "How does the hybrid search combine results from vector search and keyword search?",
+    "ground_truth": "The hybrid search combines results from vector semantic search and traditional BM25 keyword search using Reciprocal Rank Fusion (RRF), which blends and reranks the candidate pools."
+  },
+  {
+    "question": "What happens if the retrieved document chunks do not contain enough supporting evidence to answer the user's question?",
+    "ground_truth": "If the context does not contain enough supporting evidence, the pipeline triggers a strict guardrail and returns exactly: 'INSUFFICIENT_EVIDENCE: I am unable to answer based on the provided technical documentation.'"
+  },
+  {
+    "question": "Does this pipeline support deployment on AWS Lambda functions using fully serverless container constructs?",
+    "ground_truth": "INSUFFICIENT_EVIDENCE: I am unable to answer based on the provided technical documentation."
+  }
+]
