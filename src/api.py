@@ -3,13 +3,10 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any
 
-# Import your working LangGraph engine and retriever
 from src.pipeline import RAGGraphEngine
-from src.evaluation import retriever  # Assuming retriever config exports clean instance
+from src.evaluation import retriever
 
 app = FastAPI(title="Production Self-Corrective RAG API Engine", version="1.0")
-
-# Initialize your engine globally on startup
 engine = RAGGraphEngine(retriever=retriever)
 
 class ChatRequest(BaseModel):
@@ -24,10 +21,7 @@ class ChatResponse(BaseModel):
 @app.post("/api/v1/query", response_model=ChatResponse)
 async def process_rag_query(payload: ChatRequest):
     try:
-        # Run your LangGraph loop
         result = engine.run(payload.question)
-        
-        # Format document contexts into an API-serializable structure
         serialized_docs = []
         for doc in result.get("context", []):
             serialized_docs.append({
@@ -43,7 +37,3 @@ async def process_rag_query(payload: ChatRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Graph Execution Error: {str(e)}")
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("api:app", host="127.0.0.1", port=8000, reload=True)
