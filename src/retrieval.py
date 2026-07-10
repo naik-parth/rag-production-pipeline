@@ -52,7 +52,7 @@ class AdvancedRetriever:
             
         # 1. Fetch Candidates
         vector_docs = self.vector_store.similarity_search(query, k=self.config["top_k_vector"])
-        bm25_docs = self.bm25_retriever.get_relevant_documents(query)
+        bm25_docs = self.bm25_retriever.invoke(query)  # Swapped to standard .invoke()
         
         # 2. Hybrid Blend (RRF)
         hybrid_candidates = self._reciprocal_rank_fusion(vector_docs, bm25_docs)[:self.config["top_k_vector"] * 2]
