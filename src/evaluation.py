@@ -119,6 +119,12 @@ def run_evaluation():
     questions, answers, contexts, ground_truths = [], [], [], []
 
     print("Executing RAG pipeline against 4 evaluation samples...")
+    # Ensure evaluation samples are explicitly defined in scope
+    eval_samples = [
+        "What are the ingredients required for the Buffalo Chicken Sandwich?",
+        "What is the recipe for chia seed pudding?",
+    # Add any other evaluation questions you want the CI runner to test
+    ]
     for sample in eval_samples:
         q = sample["question"]
         output = engine.run(q)
