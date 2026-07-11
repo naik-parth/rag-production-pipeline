@@ -163,8 +163,11 @@ def run_evaluation():
         # Pass the async client instance directly into the factory wrapper
         eval_llm = llm_factory("gpt-4o-mini", client=openai_client)
         
+        # Initialize embeddings for AnswerRelevancy metric
+        eval_embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        
         faithfulness_metric = Faithfulness(llm=eval_llm)
-        answer_relevancy_metric = AnswerRelevancy(llm=eval_llm)
+        answer_relevancy_metric = AnswerRelevancy(llm=eval_llm, embeddings=eval_embeddings)
 
         # Invoke scoring calculations against the dataset matrix
         results = evaluate(
