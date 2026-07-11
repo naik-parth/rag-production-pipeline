@@ -118,12 +118,18 @@ def run_evaluation():
 
     questions, answers, contexts, ground_truths = [], [], [], []
 
-    print("Executing RAG pipeline against 4 evaluation samples...")
+    print("Executing RAG pipeline against evaluation samples...")
     # Ensure evaluation samples are explicitly defined in scope
     eval_samples = [
-        {"question": "What are the ingredients required for the Buffalo Chicken Sandwich?"},
-        {"question": "What is the recipe for chia seed pudding?"}
-    # Add any other evaluation questions you want the CI runner to test
+        {
+            "question": "What are the ingredients required for the Buffalo Chicken Sandwich?",
+            "ground_truth": "The Buffalo Chicken Sandwich requires chicken, buffalo sauce, bread, and toppings."
+        },
+        {
+            "question": "What is the recipe for chia seed pudding?",
+            "ground_truth": "Chia seed pudding is made by mixing chia seeds with milk and sweetener, then letting it sit overnight."
+        }
+        # Add any other evaluation questions you want the CI runner to test
     ]
     for sample in eval_samples:
         q = sample["question"]
