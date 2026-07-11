@@ -151,10 +151,6 @@ def run_evaluation():
             "question": "What is the recipe for chia seed pudding?",
             "ground_truth": "Chia seed pudding is made by mixing chia seeds with milk and sweetener, then letting it sit overnight."
         }
-<<<<<<< HEAD
-        # Add any other evaluation questions you want the CI runner to test
-=======
->>>>>>> 74d83cb (ci: handle headless environment embedding restrictions for Ragas metrics)
     ]
     
     print(f"Executing RAG pipeline against evaluation samples...")
